@@ -97,12 +97,11 @@ enum state_list main_state;
 
 static char halfhex2char(char c) {
 	char s;
-	if (c >= '0' && c <= '9') {
+	if (c >= '0' && c <= '9')
 		s = c - '0';
-	} else {
-		if (c >= 'A' && c <= 'F') {
+	else {
+		if (c >= 'A' && c <= 'F')
 			s = c - 'A' + 10;
-		}
 	}
 	return s;
 }
@@ -162,8 +161,11 @@ int main(void) {
 	/* USER CODE BEGIN Init */
 	//int idx;
 	//unsigned char by;
+	char ress;
+	char sy1;
+	char sy2;
 	unsigned char c;
-	unsigned char recieve[10];
+	//unsigned char recieve[10];
 	//unsigned char byt[2];
 	/* USER CODE END Init */
 
@@ -376,29 +378,19 @@ int main(void) {
 				break;
 
 			case ST_D1:
-				switch (c) {
-				char sy1=c;
+				sy1 = c;
 				main_state = ST_D2;
-				break;
-			default:
-				main_state = ST_RESET;
-				}
 				break;
 
 			case ST_D2:
-				switch (c) {
-				char sy2=c;
+				sy2 = c;
 				main_state = ST_Dn;
-				break;
-			default:
-				main_state = ST_RESET;
-				}
 				break;
 
 			case ST_Dn:
 				switch (c) {
 				case '\n':
-					char ress=htc(sy1,sy2);
+					ress = hex2char(sy1,sy2);
 					main_state = ST_RESET;
 					break;
 				default:
