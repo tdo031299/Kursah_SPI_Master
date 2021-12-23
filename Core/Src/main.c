@@ -55,7 +55,6 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 
-uint8_t SIGN[2];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -110,6 +109,22 @@ static char hex2char(char c1, char c2) {
 	return (halfhex2char(c1) << 4) + halfhex2char(c2);
 }
 
+static char bytetohex(char c) {
+	char s;
+	if (c >= 0x00 && c <= 0x09)
+		s = c + 0x30;
+	else {
+		if (c >= 0x0A && c <= 0x0F)
+			s = c + 0x37;
+	}
+	return s;
+}
+
+static void chtohex(char c, unsigned char *str) {
+	str[0] = bytetohex(c >> 4);
+	str[1] = bytetohex(c * 0x0F);
+}
+
 static void SPI1_Init_Clk(uint32_t CLKPolarity, uint32_t CLKPhase) {
 
 	/* USER CODE BEGIN SPI1_Init 0 */
@@ -159,14 +174,15 @@ int main(void) {
 	HAL_Init();
 
 	/* USER CODE BEGIN Init */
-	//int idx;
-	//unsigned char by;
-	char ress;
+	unsigned char ress;
 	char sy1;
 	char sy2;
 	unsigned char c;
-	//unsigned char recieve[10];
-	//unsigned char byt[2];
+	unsigned char symbols[2];
+	unsigned char buf[64];
+	unsigned char rxbuf[64];
+	int k = 0;
+
 	/* USER CODE END Init */
 
 	/* Configure the system clock */
@@ -175,6 +191,7 @@ int main(void) {
 	/* USER CODE BEGIN SysInit */
 
 	/* USER CODE END SysInit */
+
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
 	MX_USART1_UART_Init();
@@ -182,67 +199,10 @@ int main(void) {
 	/* USER CODE BEGIN 2 */
 
 	/* USER CODE END 2 */
+
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1) {
-		/*
-		 HAL_StatusTypeDef status = HAL_UART_Receive(&huart1, SIGN, sizeof(SIGN),
-		 500);
-		 HAL_UART_Abort(&huart1);
-		 if (status == HAL_OK) {
-		 HAL_UART_Transmit(&huart1, "OK", 2, 500);
-		 }
-		 if (rx(&recieve[idx]) == 1) {
-		 if (recieve[idx] == '\n') {
-		 int n = memcmp(recieve, PROTOCOL_CMD_CS0,
-		 strlen(PROTOCOL_CMD_CS0));
-		 if (n == 0) {
-		 HAL_GPIO_WritePin(SPI1_NSS_GPIO_Port, SPI1_NSS_Pin, GPIO_PIN_RESET); //CS0
-		 }
-
-		 int k = memcmp(recieve, PROTOCOL_CMD_CS1,
-		 strlen(PROTOCOL_CMD_CS1));
-		 if (k == 0) {
-		 HAL_GPIO_WritePin(SPI1_NSS_GPIO_Port, SPI1_NSS_Pin, GPIO_PIN_SET);  //CS1
-		 }
-
-		 int m = memcmp(recieve, PROTOCOL_CMD_M0,
-		 strlen(PROTOCOL_CMD_M0));
-		 if (m == 0) {
-		 SPI1_Init_Clk(SPI_POLARITY_LOW, SPI_PHASE_1EDGE);
-		 }
-
-		 int b = memcmp(recieve, PROTOCOL_CMD_M1,
-		 strlen(PROTOCOL_CMD_M1));
-		 if (b == 0) {
-		 SPI1_Init_Clk(SPI_POLARITY_LOW, SPI_PHASE_2EDGE);
-		 }
-
-		 int s = memcmp(recieve, PROTOCOL_CMD_M2,
-		 strlen(PROTOCOL_CMD_M2));
-		 if (s == 0) {
-		 SPI1_Init_Clk(SPI_POLARITY_HIGH, SPI_PHASE_1EDGE);
-		 }
-
-		 int l = memcmp(recieve, PROTOCOL_CMD_M3,
-		 strlen(PROTOCOL_CMD_M3));
-		 if (l == 0) {
-		 SPI1_Init_Clk(SPI_POLARITY_HIGH, SPI_PHASE_2EDGE);
-		 }
-
-		 idx = 0;
-
-		 }
-		 else {
-		 idx++;
-
-		 if (idx >= 11)
-		 idx = 0;
-		 }
-
-
-		 */
-
 		if (rx(&c)) {
 			switch (main_state) {
 			case ST_RESET:
@@ -256,13 +216,6 @@ int main(void) {
 				case 'M':
 					main_state = ST_M;
 					break;
-					/*
-					 case '\n':
-					 main_state = ST_RESET;
-					 HAL_SPI_Transmit(&hspi1, recieve, idx, 500);
-					 idx = 0;
-					 break;
-					 */
 				default:
 					main_state = ST_RESET;
 				}
@@ -272,10 +225,10 @@ int main(void) {
 				switch (c) {
 				case 'S':
 					main_state = ST_CS;
+					break;
 				default:
 					main_state = ST_RESET;
 				}
-				break;
 
 			case ST_CS:
 				switch (c) {
@@ -378,26 +331,29 @@ int main(void) {
 				break;
 
 			case ST_D1:
-				sy1 = c;
-				main_state = ST_D2;
+				switch (c) {
+				case '\n':
+					HAL_SPI_TransmitReceive(&hspi1, &buf[0], &rxbuf[0], k, 500);
+					for (int i = 0; i < k; i++) {
+						chtohex(rxbuf[i], symbols);
+						HAL_UART_Transmit(&huart1, &symbols[0], 2, 500);
+					}
+					main_state = ST_RESET;
+					break;
+				default:
+					sy1 = c;
+					main_state = ST_D2;
+					break;
+				}
 				break;
 
 			case ST_D2:
 				sy2 = c;
-				main_state = ST_Dn;
+				ress = hex2char(sy1, sy2);
+				buf[k] = ress;
+				k++;
+				main_state = ST_D1;
 				break;
-
-			case ST_Dn:
-				switch (c) {
-				case '\n':
-					ress = hex2char(sy1,sy2);
-					main_state = ST_RESET;
-					break;
-				default:
-					main_state = ST_RESET;
-				}
-				break;
-
 			default:
 				main_state = ST_RESET;
 
@@ -408,8 +364,8 @@ int main(void) {
 
 	/* USER CODE BEGIN 3 */
 	/* USER CODE END 3 */
-
 }
+
 /**
  * @brief System Clock Configuration
  * @retval None
@@ -533,14 +489,14 @@ static void MX_GPIO_Init(void) {
 	__HAL_RCC_GPIOA_CLK_ENABLE();
 
 	/*Configure GPIO pin Output Level */
-	HAL_GPIO_WritePin(GPIOA, SPI1_NSS_Pin | GPIO_PIN_11, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(SPI1_NSS_GPIO_Port, SPI1_NSS_Pin, GPIO_PIN_RESET);
 
-	/*Configure GPIO pins : SPI1_NSS_Pin PA11 */
-	GPIO_InitStruct.Pin = SPI1_NSS_Pin | GPIO_PIN_11;
+	/*Configure GPIO pin : SPI1_NSS_Pin */
+	GPIO_InitStruct.Pin = SPI1_NSS_Pin;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	HAL_GPIO_Init(SPI1_NSS_GPIO_Port, &GPIO_InitStruct);
 
 }
 
